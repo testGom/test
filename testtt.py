@@ -1,10 +1,8 @@
-import re
-
 async def pipe(self, user_message, model_id, messages, body, __event_emitter__=None, *__args, **__kwargs):
     query_engine = self.index.as_query_engine(streaming=True, similarity_top_k=1, response_mode="refine")
     response = query_engine.query(user_message)
 
-    # Emit citations if needed
+    # Emit citations
     for node in response.source_nodes:
         await __event_emitter__({
             "type": "citation",
@@ -18,65 +16,54 @@ async def pipe(self, user_message, model_id, messages, body, __event_emitter__=N
             }
         })
 
-    # Streaming reasoning then final answer
+    # This is a *sync* generator
     in_thinking = False
     buffer = ""
 
-    async for chunk in response.response_gen:
+    for chunk in response.response_gen:  # ✅ this works
         buffer += chunk
+        while True:
+            if in_thinking:
+                end_idx = buffer.find("</think>")
+                if end_idx == -1:
+                    if buffer.strip():
+                        await __event_emitter__({
+                            "type": "message",
+                            "data": {"content": buffer, "role": "assistant-thinking"}
+                        })
+                    buffer = ""
+                    break
+                thinking_text = buffer[:end_idx]
+                if thinking_text.strip():
+                    await __event_emitter__({
+                        "type": "message",
+                        "data": {"content": thinking_text, "role": "assistant-thinking"}
+                    })
+                buffer = buffer[end_idx + len("</think>"):]
+                in_thinking = False
+            else:
+                start_idx = buffer.find("<think>")
+                if start_idx == -1:
+                    if buffer.strip():
+                        await __event_emitter__({
+                            "type": "message",
+                            "data": {"content": buffer, "role": "assistant"}
+                        })
+                    buffer = ""
+                    break
+                if start_idx > 0:
+                    await __event_emitter__({
+                        "type": "message",
+                        "data": {"content": buffer[:start_idx], "role": "assistant"}
+                    })
+                buffer = buffer[start_idx + len("<think>"):]
+                in_thinking = True
 
-        # Start thinking block
-        if not in_thinking and "<think>" in buffer:
-            in_thinking = True
-            parts = buffer.split("<think>", 1)
-            if parts[0].strip():
-                await __event_emitter__({
-                    "type": "message",
-                    "data": {"content": parts[0], "role": "assistant"}
-                })
-            buffer = parts[1]
-            continue
-
-        # End thinking block
-        if in_thinking and "</think>" in buffer:
-            parts = buffer.split("</think>", 1)
-            if parts[0].strip():
-                await __event_emitter__({
-                    "type": "message",
-                    "data": {"content": parts[0], "role": "assistant-thinking"}
-                })
-            buffer = parts[1]
-            in_thinking = False
-            if buffer.strip():
-                await __event_emitter__({
-                    "type": "message",
-                    "data": {"content": buffer, "role": "assistant"}
-                })
-            buffer = ""
-            continue
-
-        # Stream ongoing content
-        if not in_thinking and buffer.strip():
-            await __event_emitter__({
-                "type": "message",
-                "data": {"content": buffer, "role": "assistant"}
-            })
-            buffer = ""
-        elif in_thinking and buffer.strip():
-            await __event_emitter__({
-                "type": "message",
-                "data": {"content": buffer, "role": "assistant-thinking"}
-            })
-            buffer = ""
-
-    # Flush leftover
+    # Flush remaining buffer
     if buffer.strip():
         await __event_emitter__({
             "type": "message",
-            "data": {
-                "content": buffer,
-                "role": "assistant-thinking" if in_thinking else "assistant"
-            }
+            "data": {"content": buffer, "role": "assistant-thinking" if in_thinking else "assistant"}
         })
 
     return ""
