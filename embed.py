@@ -6,6 +6,14 @@ import umap
 import hdbscan
 from chromadb import PersistentClient
 from sklearn.cluster import KMeans
+import requests
+
+def embed_with_ollama(text: str, model: str = "nomic-embed-text"):
+    url = "http://localhost:11434/api/embeddings"
+    response = requests.post(url, json={"model": model, "prompt": text})
+    response.raise_for_status()
+    return response.json()["embedding"]
+
 
 # Sidebar clustering params (no compiler required)
 st.sidebar.markdown("## Clustering Controls")
@@ -86,3 +94,47 @@ fig.update_traces(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("---")
+st.markdown("### 🔍 Try a new query (not saved)")
+
+user_input = st.text_input("Enter a text query:")
+
+if user_input:
+    with st.spinner("Embedding and projecting input..."):
+        try:
+            query_embedding = np.array([embed_with_ollama(user_input)])
+            reduced_query = reducer.transform(query_embedding)
+            predicted_label = kmeans.predict(reduced_query)[0]
+
+            xq, yq, zq = reduced_query[0]
+
+            query_df = pd.DataFrame({
+                "x": [xq],
+                "y": [yq],
+                "z": [zq],
+                "label": [f"input → {predicted_label}"],
+                "id": ["your input"],
+                "doc": [format_text_multiline(user_input)],
+                "x_str": [f"{xq:.3f}"],
+                "y_str": [f"{yq:.3f}"],
+                "z_str": [f"{zq:.3f}"]
+            })
+
+            fig.add_trace(px.scatter_3d(
+                query_df, x="x", y="y", z="z",
+                color_discrete_sequence=["black"]
+            ).update_traces(
+                marker=dict(size=8, symbol="diamond"),
+                hovertemplate=
+                    "<b>ID:</b> %{customdata[0]}<br>" +
+                    "<b>Text:</b><br>%{customdata[1]}<br><br>" +
+                    "<b>X:</b> %{customdata[2]}<br>" +
+                    "<b>Y:</b> %{customdata[3]}<br>" +
+                    "<b>Z:</b> %{customdata[4]}<extra></extra>",
+                customdata=np.array([[query_df["id"][0], query_df["doc"][0],
+                                      query_df["x_str"][0], query_df["y_str"][0], query_df["z_str"][0]]])
+            ).data[0])
+
+        except Exception as e:
+            st.error(f"Error embedding text: {e}")
