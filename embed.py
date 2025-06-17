@@ -1,74 +1,74 @@
-# chroma_3d_viewer.py
-
-import sys
+import streamlit as st
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
-import pyqtgraph.opengl as gl
-from chromadb import PersistentClient
+import pandas as pd
+import plotly.express as px
 import umap
-from tqdm import tqdm
+import hdbscan
+from chromadb import PersistentClient
 
-class Scatter3DApp(QMainWindow):
-    def __init__(self, embeddings, ids, texts):
-        super().__init__()
-        self.embeddings = embeddings
-        self.ids = ids
-        self.texts = texts
-        self.init_ui()
+# Load ChromaDB data
+client = PersistentClient(path="./chroma_db")
+collection = client.get_collection("AA")
+data = collection.get(include=["embeddings", "documents"])
 
-    def init_ui(self):
-        self.setWindowTitle('ChromaDB 3D Embedding Viewer')
-        self.resize(1000, 800)
+embeddings = np.array(data["embeddings"])
+ids = data["ids"]
+docs = data["documents"]
 
-        self.gl_widget = gl.GLViewWidget()
-        self.gl_widget.opts['distance'] = 10
-        self.gl_widget.setCameraPosition(elevation=15, azimuth=45)
-        self.gl_widget.mousePressEvent = self.on_mouse_press
+# UMAP reduction
+reducer = umap.UMAP(n_components=3, random_state=42)
+reduced = reducer.fit_transform(embeddings)
 
-        pos = np.array(self.embeddings)
-        pos -= pos.mean(axis=0)
-        pos /= pos.std()
+# Sidebar clustering parameters
+st.sidebar.markdown("## Clustering Controls")
+min_cluster_size = st.sidebar.slider("Min cluster size", 2, 100, 15)
+min_samples = st.sidebar.slider("Min samples", 1, 20, 5)
 
-        self.scatter = gl.GLScatterPlotItem(pos=pos, size=0.1, color=(0, 0.5, 1, 1), pxMode=False)
-        self.gl_widget.addItem(self.scatter)
+# Cluster on button press
+if st.sidebar.button("Cluster"):
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size, min_samples=min_samples)
+    labels = clusterer.fit_predict(reduced)
+else:
+    labels = [-1] * len(reduced)  # no cluster
 
-        self.label = QLabel("Click a point to see document text")
-        self.label.setWordWrap(True)
+# Prepare DataFrame
+def format_text_multiline(text, max_chars=60, max_lines=10):
+    words = text.split()
+    lines = []
+    line = ""
+    for word in words:
+        if len(line) + len(word) + 1 <= max_chars:
+            line += " " + word if line else word
+        else:
+            lines.append(line)
+            line = word
+        if len(lines) >= max_lines:
+            break
+    if line and len(lines) < max_lines:
+        lines.append(line)
+    return "<br>".join(lines)
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.gl_widget)
-        layout.addWidget(self.label)
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
+df = pd.DataFrame(reduced, columns=["x", "y", "z"])
+df["id"] = ids
+df["doc"] = [format_text_multiline(d) for d in docs]
+df["label"] = labels
 
-    def on_mouse_press(self, event):
-        cam_pos = self.gl_widget.cameraPosition()
-        dists = np.linalg.norm(self.embeddings - cam_pos, axis=1)
-        nearest_idx = np.argmin(dists)
-        self.label.setText(f"**ID**: {self.ids[nearest_idx]}\n\n**Document**:\n{self.texts[nearest_idx]}")
+# Hover-friendly fields
+df["x_str"] = df["x"].round(3).astype(str)
+df["y_str"] = df["y"].round(3).astype(str)
+df["z_str"] = df["z"].round(3).astype(str)
 
-def reduce_embeddings(embeddings):
-    embeddings = np.array(embeddings)
-    tqdm.write(f"Starting dim red on shape {embeddings.shape}")
-    reducer = umap.UMAP(n_components=3, random_state=42, verbose=True)
-    reduced = reducer.fit_transform(embeddings)
-    tqdm.write("Reduction complete")
-    return reduced
+# 3D Plot
+fig = px.scatter_3d(df, x="x", y="y", z="z", color=df["label"].astype(str))
 
-if __name__ == '__main__':
-    # Load from ChromaDB
-    client = PersistentClient(path="./chroma_db")
-    collection = client.get_collection("AA")
-    data = collection.get(include=["embeddings", "documents"])
+fig.update_traces(
+    hovertemplate=
+        "<b>ID:</b> %{customdata[0]}<br>" +
+        "<b>Text:</b><br>%{customdata[1]}<br><br>" +
+        "<b>X:</b> %{customdata[2]}<br>" +
+        "<b>Y:</b> %{customdata[3]}<br>" +
+        "<b>Z:</b> %{customdata[4]}<extra></extra>",
+    customdata=np.stack((df["id"], df["doc"], df["x_str"], df["y_str"], df["z_str"]), axis=-1)
+)
 
-    ids = data.get("ids", [])
-    embeddings = data.get("embeddings", [])
-    documents = data.get("documents", [])
-
-    reduced = reduce_embeddings(embeddings)
-
-    app = QApplication(sys.argv)
-    viewer = Scatter3DApp(reduced, ids, documents)
-    viewer.show()
-    sys.exit(app.exec_())
+st.plotly_chart(fig, use_container_width=True)
