@@ -5,6 +5,20 @@ import plotly.express as px
 import umap
 import hdbscan
 from chromadb import PersistentClient
+from sklearn.cluster import KMeans
+
+# Sidebar clustering params (no compiler required)
+st.sidebar.markdown("## Clustering Controls")
+n_clusters = st.sidebar.slider("Number of clusters", 2, 20, 5)
+
+# Cluster on button press
+if st.sidebar.button("Cluster"):
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    labels = kmeans.fit_predict(reduced)
+else:
+    labels = [-1] * len(reduced)  # No clusters
+df["label"] = labels
+fig = px.scatter_3d(df, x="x", y="y", z="z", color=df["label"].astype(str))
 
 # Load ChromaDB data
 client = PersistentClient(path="./chroma_db")
