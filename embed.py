@@ -125,3 +125,48 @@ def visualize3d(collection):
 
             except Exception as e:
                 st.error(f"Error embedding text: {e}")
+
+
+
+
+    # --- Search by ID ---
+    st.markdown("---")
+    st.markdown("### 🔎 Search and highlight a point by ID")
+    search_id = st.text_input("Enter an ID to highlight:")
+
+    if search_id and search_id in df["id"].values:
+        match = df[df["id"] == search_id].iloc[0]
+
+        highlight_df = pd.DataFrame({
+            "x": [match["x"]],
+            "y": [match["y"]],
+            "z": [match["z"]],
+            "id": [match["id"]],
+            "doc": [match["doc"]],
+            "x_str": [match["x_str"]],
+            "y_str": [match["y_str"]],
+            "z_str": [match["z_str"]],
+        })
+
+        fig.add_trace(px.scatter_3d(
+            highlight_df, x="x", y="y", z="z",
+            color_discrete_sequence=["red"]
+        ).update_traces(
+            marker=dict(size=7, symbol="cross"),
+            hovertemplate="""
+                <b>ID:</b> %{customdata[0]}<br>
+                <b>Text:</b><br>%{customdata[1]}<br><br>
+                <b>X:</b> %{customdata[2]}<br>
+                <b>Y:</b> %{customdata[3]}<br>
+                <b>Z:</b> %{customdata[4]}<extra></extra>
+            """,
+            customdata=np.array([[
+                match["id"], match["doc"],
+                match["x_str"], match["y_str"], match["z_str"]
+            ]])
+        ).data[0])
+
+        st.success(f"Highlighted point with ID: `{search_id}`")
+        st.plotly_chart(fig, use_container_width=True)
+    elif search_id:
+        st.warning(f"No point found with ID: `{search_id}`")
