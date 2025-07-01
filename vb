@@ -58,3 +58,33 @@ Function CallOllamaProxy(prompt As String) As String
 ErrHandler:
     CallOllamaProxy = "Error: " & Err.Description
 End Function
+
+
+                                
+@app.route("/ask", methods=["POST"])
+def ask():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        prompt = data.get("prompt", "")
+        if not prompt:
+            return Response("Error: No prompt provided", status=400)
+
+        # Collect full streamed response from Ollama
+        result = ""
+        with requests.post(
+            OLLAMA_URL,
+            json={"model": MODEL, "prompt": prompt},
+            stream=True
+        ) as r:
+            for line in r.iter_lines():
+                if line:
+                    line_data = json.loads(line.decode("utf-8"))
+                    result += line_data.get("response", "")
+
+        # Return only the response text (no JSON)
+        return Response(result.strip(), mimetype="text/plain")
+
+    except Exception as e:
+        return Response(f"Error: {str(e)}", status=500)
+
+                                
