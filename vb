@@ -3,42 +3,63 @@ Function CallOllama(prompt As String) As String
     Dim url As String
     Dim requestBody As String
     Dim responseText As String
-    Dim startTime As Double
+    Dim parsedResponse As String
 
     On Error GoTo ErrHandler
 
-    Debug.Print "== Start CallOllama =="
-    startTime = Timer
+    Debug.Print "Starting CallOllama with prompt: " & prompt
 
-    ' Use WinHttp for better timeout control
-    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
-    
-    url = "http://127.0.0.1:11434/api/generate"
-    requestBody = "{""model"":""gemma3:1b-it-qat"",""prompt"":""" & EscapeJson(prompt) & """, ""stream"": false}"
+    ' Initialize HTTP object
+    Set http = CreateObject("MSXML2.XMLHTTP")
 
-    Debug.Print "[Request Body]: " & requestBody
-    Debug.Print "[Sending request to]: " & url
+    url = "http://localhost:11434/api/generate"
+    requestBody = "{""model"":""llama3"",""prompt"":""" & EscapeJson(prompt) & """}"
 
-    ' Set a reasonable timeout (in seconds)
-    http.SetTimeouts 5000, 5000, 30000, 30000 ' DNS, connect, send, receive
+    Debug.Print "Sending request to: " & url
+    Debug.Print "Request body: " & requestBody
+
     http.Open "POST", url, False
     http.setRequestHeader "Content-Type", "application/json"
-
-    Debug.Print "[Sending at]: " & Format(Now, "hh:nn:ss")
     http.Send requestBody
 
-    Debug.Print "[Response Status]: " & http.Status
-    Debug.Print "[Raw Response]: " & http.ResponseText
-    Debug.Print "[Duration]: " & Format(Timer - startTime, "0.00") & " seconds"
+    responseText = http.responseText
+    Debug.Print "Raw response: " & responseText
 
-    If http.Status = 200 Then
-        CallOllama = ParseOllamaResponse(http.ResponseText)
-    Else
-        CallOllama = "HTTP Error: " & http.Status
-    End If
+    parsedResponse = ParseOllamaResponse(responseText)
+    Debug.Print "Parsed response: " & parsedResponse
+
+    CallOllama = parsedResponse
     Exit Function
 
 ErrHandler:
-    Debug.Print "[ERROR]: " & Err.Description
+    Debug.Print "Error occurred: " & Err.Description
     CallOllama = "Error: " & Err.Description
+End Function
+
+Function EscapeJson(text As String) As String
+    text = Replace(text, "\", "\\")
+    text = Replace(text, """", "\""")
+    EscapeJson = text
+End Function
+
+Function ParseOllamaResponse(json As String) As String
+    Dim startPos As Long, endPos As Long
+
+    On Error GoTo ParseError
+
+    startPos = InStr(json, """response"":""")
+    If startPos = 0 Then
+        Debug.Print "Could not find 'response' field in JSON"
+        ParseOllamaResponse = "Invalid response format"
+        Exit Function
+    End If
+
+    startPos = startPos + Len("""response"":""")
+    endPos = InStr(startPos, json, """}")
+    ParseOllamaResponse = Mid(json, startPos, endPos - startPos)
+    Exit Function
+
+ParseError:
+    Debug.Print "Error parsing JSON: " & Err.Description
+    ParseOllamaResponse = "Parse error: " & Err.Description
 End Function
