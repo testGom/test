@@ -1,65 +1,60 @@
-Function CallOllama(prompt As String) As String
+from flask import Flask, request, jsonify
+import requests
+
+app = Flask(__name__)
+
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL = "gemma3:1b-it-qat"
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    user_prompt = request.json.get("prompt", "")
+    response_text = ""
+
+    with requests.post(
+        OLLAMA_URL,
+        json={"model": MODEL, "prompt": user_prompt},
+        stream=True
+    ) as r:
+        for line in r.iter_lines():
+            if line:
+                try:
+                    data = line.decode("utf-8")
+                    response_text += data
+                except:
+                    pass
+
+    # You can parse and extract just the "response" field if needed
+    return jsonify({"full_output": response_text})
+
+if __name__ == "__main__":
+    app.run(port=5005)
+
+
+
+Function CallOllamaProxy(prompt As String) As String
     Dim http As Object
     Dim url As String
     Dim requestBody As String
     Dim responseText As String
-    Dim parsedResponse As String
 
     On Error GoTo ErrHandler
 
-    Debug.Print "Starting CallOllama with prompt: " & prompt
+    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
 
-    ' Initialize HTTP object
-    Set http = CreateObject("MSXML2.XMLHTTP")
-
-    url = "http://localhost:11434/api/generate"
-    requestBody = "{""model"":""llama3"",""prompt"":""" & EscapeJson(prompt) & """}"
-
-    Debug.Print "Sending request to: " & url
-    Debug.Print "Request body: " & requestBody
+    url = "http://localhost:5005/ask"
+    requestBody = "{""prompt"":""" & EscapeJson(prompt) & """}"
 
     http.Open "POST", url, False
-    http.setRequestHeader "Content-Type", "application/json"
+    http.SetRequestHeader "Content-Type", "application/json"
     http.Send requestBody
 
-    responseText = http.responseText
-    Debug.Print "Raw response: " & responseText
+    responseText = http.ResponseText
+    Debug.Print "Raw proxy response: " & responseText
 
-    parsedResponse = ParseOllamaResponse(responseText)
-    Debug.Print "Parsed response: " & parsedResponse
-
-    CallOllama = parsedResponse
+    CallOllamaProxy = responseText  ' You can parse JSON here if needed
     Exit Function
 
 ErrHandler:
-    Debug.Print "Error occurred: " & Err.Description
-    CallOllama = "Error: " & Err.Description
-End Function
-
-Function EscapeJson(text As String) As String
-    text = Replace(text, "\", "\\")
-    text = Replace(text, """", "\""")
-    EscapeJson = text
-End Function
-
-Function ParseOllamaResponse(json As String) As String
-    Dim startPos As Long, endPos As Long
-
-    On Error GoTo ParseError
-
-    startPos = InStr(json, """response"":""")
-    If startPos = 0 Then
-        Debug.Print "Could not find 'response' field in JSON"
-        ParseOllamaResponse = "Invalid response format"
-        Exit Function
-    End If
-
-    startPos = startPos + Len("""response"":""")
-    endPos = InStr(startPos, json, """}")
-    ParseOllamaResponse = Mid(json, startPos, endPos - startPos)
-    Exit Function
-
-ParseError:
-    Debug.Print "Error parsing JSON: " & Err.Description
-    ParseOllamaResponse = "Parse error: " & Err.Description
+    CallOllamaProxy = "Error: " & Err.Description
 End Function
