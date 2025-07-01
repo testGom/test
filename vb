@@ -87,4 +87,38 @@ def ask():
     except Exception as e:
         return Response(f"Error: {str(e)}", status=500)
 
+Function CallIncidents(anomaliesRange As Range, incidentCell As Range) As String
+    Dim anomalyText As String
+    Dim prompt As String
+    Dim row As Range
+    Dim cell As Range
+    Dim sep As String: sep = " | "
+
+    ' Step 1: Build anomaly context
+    anomalyText = ""
+    For Each row In anomaliesRange.Rows
+        Dim rowText As String: rowText = ""
+        For Each cell In row.Cells
+            rowText = rowText & cell.Text & sep
+        Next cell
+        anomalyText = anomalyText & Left(rowText, Len(rowText) - Len(sep)) & vbCrLf
+    Next row
+
+    ' Step 2: Get incident description
+    Dim incidentText As String
+    incidentText = incidentCell.Text
+
+    ' Step 3: Construct the full prompt
+    prompt = "You are a system that maps IT incidents to known anomalies." & vbCrLf & _
+             "Below is a list of anomalies (one per line), and one incident." & vbCrLf & _
+             "Return the IDs of the most relevant anomalies to the incident, and explain briefly." & vbCrLf & vbCrLf & _
+             "### Anomalies ###" & vbCrLf & anomalyText & vbCrLf & _
+             "### Incident ###" & vbCrLf & incidentText & vbCrLf & vbCrLf & _
+             "### Output ###"
+
+    ' Step 4: Call proxy function
+    CallIncidents = CallOllamaProxy(prompt)
+End Function
+
+
                                 
