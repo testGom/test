@@ -3,48 +3,42 @@ Function CallOllama(prompt As String) As String
     Dim url As String
     Dim requestBody As String
     Dim responseText As String
+    Dim startTime As Double
 
     On Error GoTo ErrHandler
 
-    ' Initialize HTTP object
-    Set http = CreateObject("MSXML2.XMLHTTP")
+    Debug.Print "== Start CallOllama =="
+    startTime = Timer
 
-    ' Endpoint for Ollama
-    url = "http://localhost:11434/api/generate"
+    ' Use WinHttp for better timeout control
+    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
+    
+    url = "http://127.0.0.1:11434/api/generate"
+    requestBody = "{""model"":""gemma3:1b-it-qat"",""prompt"":""" & EscapeJson(prompt) & """, ""stream"": false}"
 
-    ' JSON body with prompt and model name (change "llama3" if needed)
-    requestBody = "{""model"":""llama3"",""prompt"":""" & EscapeJson(prompt) & """}"
+    Debug.Print "[Request Body]: " & requestBody
+    Debug.Print "[Sending request to]: " & url
 
-    ' Send POST request
+    ' Set a reasonable timeout (in seconds)
+    http.SetTimeouts 5000, 5000, 30000, 30000 ' DNS, connect, send, receive
     http.Open "POST", url, False
     http.setRequestHeader "Content-Type", "application/json"
+
+    Debug.Print "[Sending at]: " & Format(Now, "hh:nn:ss")
     http.Send requestBody
 
-    ' Parse response (assuming JSON with field "response")
-    responseText = http.responseText
-    CallOllama = ParseOllamaResponse(responseText)
+    Debug.Print "[Response Status]: " & http.Status
+    Debug.Print "[Raw Response]: " & http.ResponseText
+    Debug.Print "[Duration]: " & Format(Timer - startTime, "0.00") & " seconds"
+
+    If http.Status = 200 Then
+        CallOllama = ParseOllamaResponse(http.ResponseText)
+    Else
+        CallOllama = "HTTP Error: " & http.Status
+    End If
     Exit Function
 
 ErrHandler:
+    Debug.Print "[ERROR]: " & Err.Description
     CallOllama = "Error: " & Err.Description
-End Function
-
-' Helper to escape quotes and backslashes in JSON
-Function EscapeJson(text As String) As String
-    text = Replace(text, "\", "\\")
-    text = Replace(text, """", "\""")
-    EscapeJson = text
-End Function
-
-' Basic parser to extract the response field (simple but works)
-Function ParseOllamaResponse(json As String) As String
-    Dim startPos As Long, endPos As Long
-    startPos = InStr(json, """response"":""")
-    If startPos = 0 Then
-        ParseOllamaResponse = "No response"
-        Exit Function
-    End If
-    startPos = startPos + Len("""response"":""")
-    endPos = InStr(startPos, json, """}")
-    ParseOllamaResponse = Mid(json, startPos, endPos - startPos)
 End Function
