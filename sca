@@ -1,0 +1,89 @@
+import os
+import re
+import json
+import csv
+
+# Patterns to detect secrets
+SECRET_PATTERNS = {
+    'AWS Access Key': r'AKIA[0-9A-Z]{16}',
+    'AWS Secret Key': r'(?<![A-Za-z0-9])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9])',
+    'Generic API Key': r'(?i)(api[_-]?key|secret|token)[\'"\s:=]+[0-9a-zA-Z\-_=]{16,}',
+    'JWT Token': r'eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+',
+    'Password': r'(?i)(password|passwd|pwd)[\'"\s:=]+[^\'"\s]+'
+}
+
+TEXT_FILE_EXTENSIONS = ('.txt', '.env', '.conf', '.cfg', '.json', '.yaml', '.yml', '.py', '.js', '.ts', '.ipynb', '.csv')
+
+def is_text_file(file_path):
+    return file_path.endswith(TEXT_FILE_EXTENSIONS)
+
+def scan_line(content, file_path, lineno):
+    results = []
+    for label, pattern in SECRET_PATTERNS.items():
+        if re.search(pattern, content):
+            results.append((file_path, lineno, label, content.strip()))
+    return results
+
+def scan_ipynb(file_path):
+    results = []
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            nb = json.load(f)
+            cells = nb.get('cells', [])
+            for i, cell in enumerate(cells):
+                if cell.get('cell_type') == 'code':
+                    for j, line in enumerate(cell.get('source', []), 1):
+                        results.extend(scan_line(line, file_path, f"cell {i+1}, line {j}"))
+    except Exception as e:
+        print(f"[ERROR] Could not parse {file_path}: {e}")
+    return results
+
+def scan_csv(file_path):
+    results = []
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            reader = csv.reader(f)
+            for lineno, row in enumerate(reader, 1):
+                for cell in row:
+                    results.extend(scan_line(cell, file_path, lineno))
+    except Exception as e:
+        print(f"[ERROR] Could not read {file_path}: {e}")
+    return results
+
+def scan_plain_file(file_path):
+    results = []
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for lineno, line in enumerate(f, 1):
+                results.extend(scan_line(line, file_path, lineno))
+    except Exception as e:
+        print(f"[ERROR] Could not read {file_path}: {e}")
+    return results
+
+def scan_file(file_path):
+    if file_path.endswith('.ipynb'):
+        return scan_ipynb(file_path)
+    elif file_path.endswith('.csv'):
+        return scan_csv(file_path)
+    else:
+        return scan_plain_file(file_path)
+
+def scan_directory(root_dir):
+    findings = []
+    for root, _, files in os.walk(root_dir):
+        for file in files:
+            file_path = os.path.join(root, file)
+            if is_text_file(file_path):
+                findings.extend(scan_file(file_path))
+    return findings
+
+if __name__ == "__main__":
+    directory = input("Enter the directory to scan: ").strip()
+    secrets_found = scan_directory(directory)
+
+    if secrets_found:
+        print("\n[!] Potential secrets found:\n")
+        for file_path, lineno, label, line in secrets_found:
+            print(f"{label} in {file_path} (Line {lineno}): {line}")
+    else:
+        print("✅ No secrets found.")
