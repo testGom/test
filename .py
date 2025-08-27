@@ -99,3 +99,73 @@
 
         # Citations
         for node in response.source_nodes:
+
+
+
+--------------------
+
+else:
+                    # Stream thought content up to close, then close the collapsible
+                    before = self._buf[:close_idx]
+                    if before:
+                        events.append(self._emit_msg(before))
+                    self._buf = self._buf[close_idx + len(close_tag):]
+                    self._in_thought = False
+                    if self._opened_thought:
+                        events.append(self._emit_thought_close())
+                        self._opened_thought = False
+                    # loop to handle any text that follows the close tag
+                    continue
+
+            # Not in thought: look for open tag
+            open_idx = self._buf.find(open_tag)
+            if open_idx == -1:
+                # No open tag — stream most, keep a tail to catch a tag that might straddle chunks
+                if len(self._buf) > tail_keep:
+                    to_emit = self._buf[:-tail_keep]
+                    if to_emit:
+                        events.append(self._emit_msg(to_emit))
+                    self._buf = self._buf[-tail_keep:]
+                break
+            else:
+                # Emit any normal text before the open tag
+                if open_idx > 0:
+                    pre = self._buf[:open_idx]
+                    if pre:
+                        events.append(self._emit_msg(pre))
+
+                # Enter thought mode and drop the open tag
+                self._buf = self._buf[open_idx + len(open_tag):]
+                self._in_thought = True
+
+                if self.valves.use_collapsible and not self._opened_thought:
+                    events.append(self._emit_thought_open())
+                    self._opened_thought = True
+                # loop to immediately look for a close in same buffer iteration
+                continue
+
+        return events
+
+
+        for token in response.response_gen:
+            for ev in self._process_stream_chunk(token):
+                yield ev
+
+        # Flush leftovers at end of stream
+        if self._in_thought:
+            # stream any residual text we kept as tail
+            if self._buf:
+                yield self._emit_msg(self._buf)
+                self._buf = ""
+            # close the collapsible defensively
+            if self._opened_thought:
+                yield self._emit_thought_close()
+                self._opened_thought = False
+            self._in_thought = False
+        else:
+            if self._buf:
+                yield self._emit_msg(self._buf)
+                self._buf = ""
+
+        # Citations
+        for node in response.source_nodes:
