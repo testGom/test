@@ -1,99 +1,45 @@
+module class
+
 Option Explicit
 
-' A dictionary of active requests so we can map them back to the correct cell
-Dim activeRequests As Object
+Public WithEvents http As MSXML2.XMLHTTP60
+Private targetAddress As String
 
-Sub RunLLAMA_Async_OnSelection()
-    Dim sel As Range, c As Range, tgt As Range, url As String, data As String
-    Dim http As Object
+Public Sub Start(prompt As String, targetCell As Range)
+    targetAddress = targetCell.Address(False, False)
     
-    If TypeName(Selection) <> "Range" Then
-        MsgBox "Select one or two columns of prompts.", vbExclamation
-        Exit Sub
-    End If
-    Set sel = Selection
-    
-    Dim useTwoCols As Boolean
-    If sel.Columns.Count = 1 Then
-        useTwoCols = False                 ' results go to the column to the right
-    ElseIf sel.Columns.Count = 2 Then
-        useTwoCols = True                  ' left = prompts, right = results
-    Else
-        MsgBox "Select either one column (results to the right) OR two columns (left=prompt, right=result).", vbExclamation
-        Exit Sub
-    End If
-    
-    ' Init dictionary
-    Set activeRequests = CreateObject("Scripting.Dictionary")
-    
+    Set http = New MSXML2.XMLHTTP60
+    Dim url As String, data As String
     url = "http://127.0.0.1:8080/v1/chat/completions"
+    data = "{""model"":""local-model"",""messages"":[{""role"":""user"",""content"":""" & JsonEscape(prompt) & """}]}"
     
-    ' Fire off an async request for each prompt
-    For Each c In sel.Columns(1).Cells
-        If Trim$(CStr(c.Value)) <> "" Then
-            If useTwoCols Then
-                Set tgt = c.Offset(0, sel.Columns.Count - 1)  ' second column
-            Else
-                Set tgt = c.Offset(0, 1)                      ' next column to the right
-            End If
-            
-            tgt.Value = "Computing..."
-            
-            data = "{""model"":""local-model"",""messages"":[{""role"":""user"",""content"":""" & JsonEscape(c.Value) & """}]}"
-            
-            Set http = CreateObject("MSXML2.XMLHTTP.6.0")
-            http.Open "POST", url, True   ' True = async
-            http.setRequestHeader "Content-Type", "application/json"
-            
-            ' Store cell reference in dictionary so callback knows where to write
-            activeRequests(http) = tgt.Address(False, False)
-            
-            ' Hook callback
-            Set http.onreadystatechange = GetRef("LLAMA_ResponseHandler")
-            http.Send data
-        End If
-    Next c
+    http.Open "POST", url, True
+    http.setRequestHeader "Content-Type", "application/json"
+    http.Send data
+    
+    targetCell.Value = "Computing..."
 End Sub
 
-' Async callback: runs whenever a request changes state
-Sub LLAMA_ResponseHandler()
-    Dim http As Object, addr As String, tgt As Range, result As String
-    
-    Set http = Nothing
-    On Error Resume Next
-    Set http = GetEventSource()   ' VBA doesn’t natively expose this, but MSXML calls back with http object
-    On Error GoTo 0
-    
-    If http Is Nothing Then Exit Sub
-    
+Private Sub http_onreadystatechange()
     If http.readyState = 4 Then
-        addr = activeRequests(http)
-        If Len(addr) > 0 Then
-            Set tgt = Range(addr)
-            
-            If http.Status = 200 Then
-                result = ExtractContent(http.responseText)
-                If Len(result) = 0 Then result = "200 OK but no content"
-                tgt.Value = result
-            Else
-                tgt.Value = "HTTP " & http.Status & " " & http.statusText
-            End If
-            
-            activeRequests.Remove http
+        Dim tgt As Range
+        Set tgt = Range(targetAddress)
+        
+        If http.Status = 200 Then
+            tgt.Value = ExtractContent(http.responseText)
+        Else
+            tgt.Value = "HTTP " & http.Status & " " & http.statusText
         End If
     End If
 End Sub
 
-' Extract message.content
 Private Function ExtractContent(json As String) As String
     Dim p As Long, q As Long, esc As Boolean, ch As String
-    
     p = InStr(1, json, """content"":""", vbTextCompare)
     If p = 0 Then Exit Function
     p = p + Len("""content"":""")
     q = p
     esc = False
-    
     Do While q <= Len(json)
         ch = Mid$(json, q, 1)
         If ch = "\" And Not esc Then
@@ -105,7 +51,6 @@ Private Function ExtractContent(json As String) As String
         End If
         q = q + 1
     Loop
-    
     Dim raw As String
     raw = Mid$(json, p, q - p)
     raw = Replace(raw, "\n", vbLf)
@@ -113,7 +58,6 @@ Private Function ExtractContent(json As String) As String
     ExtractContent = raw
 End Function
 
-' Escape prompt safely
 Private Function JsonEscape(text As String) As String
     Dim s As String
     s = text
@@ -124,3 +68,44 @@ Private Function JsonEscape(text As String) As String
     s = Replace(s, vbLf, "\n")
     JsonEscape = s
 End Function
+
+----------------------------------------------------------
+module
+
+Option Explicit
+
+Dim requests As Collection
+
+Sub RunLLAMA_Async_OnSelection()
+    Dim sel As Range, c As Range, tgt As Range
+    Dim useTwoCols As Boolean
+    
+    If TypeName(Selection) <> "Range" Then Exit Sub
+    Set sel = Selection
+    
+    If sel.Columns.Count = 1 Then
+        useTwoCols = False
+    ElseIf sel.Columns.Count = 2 Then
+        useTwoCols = True
+    Else
+        MsgBox "Select 1 column (results go right) or 2 columns (left=prompt, right=result)."
+        Exit Sub
+    End If
+    
+    Set requests = New Collection
+    
+    For Each c In sel.Columns(1).Cells
+        If Trim$(CStr(c.Value)) <> "" Then
+            If useTwoCols Then
+                Set tgt = c.Offset(0, sel.Columns.Count - 1)
+            Else
+                Set tgt = c.Offset(0, 1)
+            End If
+            Dim r As New CAsyncRequest
+            r.Start c.Value, tgt
+            requests.Add r  ' keep object alive
+        End If
+    Next c
+End Sub
+
+
