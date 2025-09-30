@@ -1,0 +1,121 @@
+Option Explicit
+
+Sub RunLLAMA_OnSelection()
+    Dim sel As Range
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "Select one or two columns of prompts.", vbExclamation
+        Exit Sub
+    End If
+    Set sel = Selection
+
+    Dim useTwoCols As Boolean
+    If sel.Columns.Count = 1 Then
+        useTwoCols = False                 ' results go to the column to the right
+    ElseIf sel.Columns.Count = 2 Then
+        useTwoCols = True                  ' left = prompts, right = results
+    Else
+        MsgBox "Select either one column (results to the right) OR two columns (left=prompt, right=result).", vbExclamation
+        Exit Sub
+    End If
+
+
+    Dim c As Range, tgt As Range
+    For Each c In sel.Columns(1).Cells
+        If Trim$(CStr(c.Value)) <> "" Then
+            If useTwoCols Then
+                Set tgt = c.Offset(0, 1)   ' second column of the selection
+            Else
+                Set tgt = c.Offset(0, 1)   ' next column to the right
+            End If
+            tgt.Value = "Computing..."
+        End If
+    Next c
+    DoEvents
+
+ 
+    Dim reply As String, prompt As String
+    For Each c In sel.Columns(1).Cells
+        prompt = Trim$(CStr(c.Value))
+        If prompt <> "" Then
+            Set tgt = c.Offset(0, 1)
+            reply = FetchLLAMA(prompt)
+            tgt.Value = reply
+        End If
+    Next c
+End Sub
+
+Private Function FetchLLAMA(prompt As String) As String
+    On Error GoTo EH
+
+    Dim http As Object, url As String, data As String
+    url = "http://127.0.0.1:8080/v1/chat/completions" 
+    data = "{""model"":""local-model"",""messages"":[{""role"":""user"",""content"":""" & JsonEscape(prompt) & """}]}"
+
+    ' If MSXML2.XMLHTTP.* gives you trouble, try WinHttp (uncomment the next line and comment the MSXML2 line)
+    'Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
+    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+
+    http.Open "POST", url, False
+    http.setRequestHeader "Content-Type", "application/json"
+    http.setRequestHeader "User-Agent", "ExcelVBA-LLAMA"
+    http.Send data
+
+    If http.Status = 200 Then
+        Dim body As String, content As String
+        body = http.responseText
+        content = ExtractContent(body)
+        If Len(content) = 0 Then
+            FetchLLAMA = "200 OK but no content found. Raw: " & Left$(body, 200)
+        Else
+            FetchLLAMA = content
+        End If
+    Else
+        FetchLLAMA = "HTTP " & http.Status & " " & http.statusText
+    End If
+    Exit Function
+
+EH:
+    FetchLLAMA = "VBA error " & Err.Number & ": " & Err.Description
+End Function
+
+
+Private Function ExtractContent(json As String) As String
+    Dim startAt As Long, p As Long, q As Long, ch As String, esc As Boolean
+    startAt = InStr(1, json, """message""", vbTextCompare)
+    If startAt = 0 Then startAt = 1
+
+    p = InStr(startAt, json, """content"":""", vbTextCompare)
+    If p = 0 Then Exit Function
+
+    p = p + Len("""content"":""")
+    q = p
+    esc = False
+    Do While q <= Len(json)
+        ch = Mid$(json, q, 1)
+        If ch = "\" And Not esc Then
+            esc = True
+        ElseIf ch = """" And Not esc Then
+            Exit Do
+        Else
+            esc = False
+        End If
+        q = q + 1
+    Loop
+
+    Dim raw As String
+    raw = Mid$(json, p, q - p)
+    raw = Replace(raw, "\n", vbLf)
+    raw = Replace(raw, "\""","""")
+    ExtractContent = raw
+End Function
+
+Private Function JsonEscape(text As String) As String
+    Dim s As String
+    s = text
+    s = Replace(s, "\", "\\")
+    s = Replace(s, """", "\""")
+    s = Replace(s, vbCrLf, "\n")
+    s = Replace(s, vbCr, "\n")
+    s = Replace(s, vbLf, "\n")
+    JsonEscape = s
+End Function
