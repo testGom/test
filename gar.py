@@ -154,3 +154,90 @@ with open(output_path, "w", encoding="utf-8") as f:
 logging.info(f"Saved contextualized chunks to {output_path}")
 print(f"Saved contextualized chunks to: {output_path}")
 print(f"🪵 Log file: {LOG_FILE}")
+
+
+-----------
+
+def get_context_from_ollama(whole_doc: str, chunk_text: str, model: str, metadata: dict) -> str:
+    chunk_info = f"{metadata.get('file_name', 'unknown')} | page {metadata.get('page')} | chunk {metadata.get('chunk_index')}"
+    prompt = build_prompt(whole_doc, chunk_text)
+
+    try:
+        response = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
+        result = response["message"]["content"].strip()
+        llm_logger.info(f"[SUCCESS] {chunk_info}\nPROMPT LEN: {len(prompt)}\nRESPONSE:\n{result}\n{'='*80}")
+        return result
+    except Exception as e:
+        err_msg = str(e)
+        llm_logger.warning(f"[RETRY] {chunk_info} initial Ollama call failed: {err_msg}")
+
+        
+        max_attempts = 5
+        step_ratio = 0.8  
+        trimmed = whole_doc
+
+        for attempt in range(1, max_attempts + 1):
+            trimmed = trimmed[: int(len(trimmed) * step_ratio)]
+            prompt = build_prompt(trimmed, chunk_text)
+            try:
+                response = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
+                result = response["message"]["content"].strip()
+                llm_logger.info(f"[SUCCESS after {attempt}] {chunk_info}\nPROMPT LEN: {len(prompt)}\nRESPONSE:\n{result}\n{'='*80}")
+                return result
+            except Exception as e2:
+                llm_logger.warning(f"[FAIL {attempt}] {chunk_info} retry failed: {e2}")
+                continue
+
+        llm_logger.error(f"[GIVEUP] {chunk_info} failed after {max_attempts} retries.")
+        return ""
+
+
+# Write to jsonl
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+OUTPUT_PATH = Path(OUTPUT_FOLDER) / f"contextual_chunks_{timestamp}.jsonl"
+
+with open(OUTPUT_PATH, "a", encoding="utf-8") as fout:
+    total_chunks = 0
+
+    for (src, page), page_chunks in tqdm(by_page.items(), desc="Contextualizing pages..."):
+        full_doc = " ".join([c.page_content for c in page_chunks])
+
+        for idx, d in enumerate(page_chunks):
+            src_path = d.metadata.get("source", "")
+            file_name = pathlib.Path(src_path).name if src_path else "unknown"
+            start_index = d.metadata.get("start_index") or 0
+            end_index = start_index + len(d.page_content)
+
+            h = hashlib.sha256()
+            h.update(str(src_path).encode("utf-8"))
+            h.update(str(page).encode("utf-8"))
+            h.update(str(start_index).encode("utf-8"))
+            h.update(str(d.page_content[:200]).encode("utf-8"))
+            chunk_id = h.hexdigest()[:16]
+
+            d.metadata.update(
+                {
+                    "file_name": file_name,
+                    "chunk_index": idx,
+                    "page": page,
+                    "total_chunks_per_page": len(page_chunks),
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "ingested_at": datetime.now().isoformat(),
+                    "chunk_id": chunk_id,
+                }
+            )
+
+            # Call Ollama dynamically
+            context_text = get_context_from_ollama(full_doc, d.page_content, model=MODEL_NAME, metadata=d.metadata)
+            contextualized_chunk = f"{context_text}\n\n{d.page_content}" if context_text else d.page_content
+
+            # Save immediately (crash-safe)
+            fout.write(json.dumps({"id": chunk_id, "text": contextualized_chunk, "metadata": d.metadata}, ensure_ascii=False) + "\n")
+            fout.flush()
+
+            total_chunks += 1
+
+logging.info(f" Completed contextualization for {total_chunks} chunks.")
+logging.info(f"Chunks saved incrementally to {OUTPUT_PATH}")
+
