@@ -241,3 +241,46 @@ with open(OUTPUT_PATH, "a", encoding="utf-8") as fout:
 logging.info(f" Completed contextualization for {total_chunks} chunks.")
 logging.info(f"Chunks saved incrementally to {OUTPUT_PATH}")
 
+
+-----
+from langchain_community.vectorstores import PGVector
+from langchain_community.embeddings import OllamaEmbeddings
+
+
+
+embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+
+vectorstore = PGVector(
+    connection_string=CONNECTION_STRING,
+    collection_name=COLLECTION_NAME,
+    embedding_function=embeddings,
+)
+
+
+print("📊 Counting records...")
+try:
+    count = vectorstore._execute("SELECT COUNT(*) FROM langchain_pg_embedding;").fetchone()[0]
+    print(f"✅ Total chunks stored: {count}")
+except Exception:
+    count = vectorstore._execute(f"SELECT COUNT(*) FROM {COLLECTION_NAME};").fetchone()[0]
+    print(f"✅ Total chunks in '{COLLECTION_NAME}': {count}")
+
+
+print("\n🔍 Sample metadata:")
+rows = vectorstore._execute(f"SELECT id, LEFT(text, 200) as preview, metadata FROM {COLLECTION_NAME} LIMIT 3;").fetchall()
+for row in rows:
+    print(f"\nID: {row[0]}")
+    print(f"Text preview: {row[1][:150].replace('\\n',' ')}...")
+    print(f"Metadata: {row[2]}")
+
+
+query = "ACME Corp revenue growth in Q2 2023"
+print(f"\n🧠 Running similarity search for: '{query}'")
+
+docs = vectorstore.similarity_search(query, k=3)
+for i, doc in enumerate(docs, 1):
+    print(f"\nResult {i}:")
+    print(f"Text: {doc.page_content[:250]}...")
+    print(f"Metadata: {doc.metadata}")
+
+
