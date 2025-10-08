@@ -257,30 +257,45 @@ vectorstore = PGVector(
 )
 
 
-print("📊 Counting records...")
-try:
-    count = vectorstore._execute("SELECT COUNT(*) FROM langchain_pg_embedding;").fetchone()[0]
-    print(f"✅ Total chunks stored: {count}")
-except Exception:
-    count = vectorstore._execute(f"SELECT COUNT(*) FROM {COLLECTION_NAME};").fetchone()[0]
-    print(f"✅ Total chunks in '{COLLECTION_NAME}': {count}")
+print("📡 Connecting to Postgres...")
+conn = psycopg2.connect(CONNECTION_STRING)
+cur = conn.cursor()
 
+cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public';")
+tables = [r[0] for r in cur.fetchall()]
+print("\n📋 Tables in database:", tables)
 
-print("\n🔍 Sample metadata:")
-rows = vectorstore._execute(f"SELECT id, LEFT(text, 200) as preview, metadata FROM {COLLECTION_NAME} LIMIT 3;").fetchall()
-for row in rows:
-    print(f"\nID: {row[0]}")
-    print(f"Text preview: {row[1][:150].replace('\\n',' ')}...")
-    print(f"Metadata: {row[2]}")
+if COLLECTION_NAME not in tables:
+    print(f"⚠️ Table '{COLLECTION_NAME}' not found! Check your collection name.")
+else:
+    cur.execute(f"SELECT COUNT(*) FROM {COLLECTION_NAME};")
+    count = cur.fetchone()[0]
+    print(f"✅ Total chunks stored in '{COLLECTION_NAME}': {count}")
 
+    cur.execute(f"SELECT id, LEFT(text, 200), metadata FROM {COLLECTION_NAME} LIMIT 3;")
+    rows = cur.fetchall()
+    print("\n🔍 Sample entries:")
+    for r in rows:
+        print(f"\nID: {r[0]}")
+        print(f"Text preview: {r[1][:150].replace('\\n',' ')}...")
+        print(f"Metadata: {r[2]}")
+
+cur.close()
+conn.close()
+
+print("\n🧠 Testing similarity search via LangChain...")
+
+embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+vectorstore = PGVector(
+    connection_string=CONNECTION_STRING,
+    collection_name=COLLECTION_NAME,
+    embedding_function=embeddings,
+)
 
 query = "ACME Corp revenue growth in Q2 2023"
-print(f"\n🧠 Running similarity search for: '{query}'")
-
 docs = vectorstore.similarity_search(query, k=3)
+
 for i, doc in enumerate(docs, 1):
     print(f"\nResult {i}:")
     print(f"Text: {doc.page_content[:250]}...")
     print(f"Metadata: {doc.metadata}")
-
-
