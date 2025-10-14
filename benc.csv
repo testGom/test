@@ -1,0 +1,22 @@
+Benchmark;Objectif;Description;Exemples;Lien
+MMLU;Évaluer la connaissance multi?disciplinaire des LLM;57 matières (sciences, humanités, sciences sociales) avec questions à choix multiple;Questions d’algèbre, d’anatomie et d’astronomie (p. ex. « Pourquoi pas de planète dans la ceinture d’astéroïdes ? »);Article MMLU
+MMLU?Pro;Version plus difficile de MMLU avec raisonnement;10 options par question, prompts chain?of?thought, physique et maths;Exemple : calculer la magnification d’un télescope à deux lentilles;Paper MMLU?Pro
+MMMU (MMMLU);;;;
+IFBench;Suivi d’instructions avec contraintes;58 contraintes vérifiables (compter, format, alphabet, mots interdits);"« Écrire une recette avec des mots uniques »; résumé où chaque mot commence par la lettre suivante";Paper IFBench
+LiveBench;Benchmark avec questions renouvelées;21 tâches de mathématiques, code, raisonnement et data, mises à jour mensuellement;;Site LiveBench
+HLE;« Dernier examen » académique;2 500 questions multi?domaines + confiance, calibrage;"Exemples : traduction d’une inscription palmyrénienne; anatomie des colibris";Site HLE
+Artificial Analysis Index;Combiner plusieurs bancs;Pondère MMLU?Pro, GPQA Diamond, HLE, LiveCodeBench, SciCode, AIME 2025, IFBench, AA?LCR, Terminal?Bench Hard et ?²?Bench;"Index composite; pas d’exemples";Méthodologie Artificial Analysis
+Chatbot Arena;Évaluer par vote humain;"Deux LLM anonymes répondent à des questions d’utilisateurs; classement Elo";Questions libres (conversations variées);Blog LMSYS
+ArenaHard V2;Sélectionner des prompts difficiles depuis Chatbot Arena;Pipeline pour extraire des prompts à haute séparabilité et accord humain;"Prompts de chat (philo, prog, actus); pas d’exemple public";Article Arena?Hard
+SimpleQA / SimpleQA Verified;Faits courts;4 326 questions factuelles, version vérifiée de 1 000 questions;"« Quel joueur néerlandais a marqué un but contre l’Argentine en 2022 ?»; date de naissance de Mohammed Racim";Article OpenAI
+GPQA;Questions scientifiques difficiles;"448 questions de biologie, physique, chimie; 4 options";Calcul d’hétérozygotes en génétique ou points d’équivalence d’un titrage;Paper GPQA
+GPQA Diamond;Sous?ensemble plus difficile de GPQA;"198 questions validées par experts; instructions « Answer: X »";Exemple : décalage de NMR d’un métal dans une réaction organique;Page Epoch AI
+Math?500;Sous?ensemble MATH;"500 problèmes variés; réponses encadrées (\boxed{})";Calcul 1/cos^2(10°)+1/sin^2(20°)+1/sin^2(40°) (réponse 11);Page Vals AI
+AIME 2025;Questions du concours AIME;30 problèmes mathématiques, réponses entières;Base b divisant 97_b, problèmes de géométrie et de combinatoire;Vals AI & HF
+SciCode;Codage scientifique;80 problèmes, 338 sous?problèmes en physique, chimie, bio, etc.;Calculer les nombres de Chern du modèle de Haldane;Paper SciCode
+LiveCodeBench;Codage en Python en continu;Problèmes de LeetCode/AtCoder/CodeForces, code, auto?réparation et exécution;"Construire un générateur d’entrées adversaires; tâches punishmentNumber(n)";Paper LCB
+?²?Bench (Telecom);Agents de service client;Simulation de domaines (airline, retail, télécom) avec politique, outils et tâches;"Exemple : diagnostiquer un modem et organiser une visite; tâches non publiques";GitHub ?²?bench
+Terminal?Bench Hard;Évaluer des agents en CLI;47 tâches complexes en admin. système et dev. logiciels;Compiler le noyau Linux, configurer un serveur Git, craquer une archive 7z;Article Terminal?Bench
+LongBench v2;Raisonnement avec contextes très longs;503 QCM avec contextes de 8k à 2 M mots, 6 catégories;"Extraits de documents ou dialogues longs; pas d’exemples courts";Paper LongBench v2
+Ruler;Mesurer l’usage réel d’un long contexte;13 tâches synthétiques (retrieval, multi?hop, aggregation, QA) ajustables;Recherche de nombre magique (« 12345 »), suivi de variables, extraction de mots fréquents;Paper Ruler
+AA?LCR;Raisonnement sur documents longs;100 questions basées sur des documents jusqu’à 100k tokens;"Classer des industries selon les infractions ACCC; lister des affaires de contrefaçon";Dataset AA?LCR
