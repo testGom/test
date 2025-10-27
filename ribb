@@ -1,0 +1,36 @@
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="RibbonOnLoad">
+  <ribbon>
+    <tabs>
+      <!-- Create a new tab -->
+      <tab id="tabMyTools" label="My Tools">
+
+        <!-- Create a group of buttons -->
+        <group id="grpActions" label="Actions">
+
+          <!-- A large button -->
+          <button id="btnRun"
+                  label="Run Process"
+                  imageMso="HappyFace"
+                  size="large"
+                  onAction="RunProcessMacro"/>
+
+          <!-- A regular-size button -->
+          <button id="btnExport"
+                  label="Export Data"
+                  imageMso="ExportExcel"
+                  onAction="ExportDataMacro"/>
+
+        </group>
+
+        <!-- Another group -->
+        <group id="grpHelp" label="Help">
+          <button id="btnAbout"
+                  label="About"
+                  imageMso="Information"
+                  onAction="ShowAbout"/>
+        </group>
+
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>
