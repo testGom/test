@@ -1,0 +1,65 @@
+import pandas as pd
+import numpy as np
+from io import StringIO
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill
+from matplotlib import cm, colors
+
+
+csv_data = """
+"""
+
+df = pd.read_csv(StringIO(csv_data))
+
+
+
+df = df[ordered_columns]
+
+# === Create workbook ===
+output_file = ""
+wb = Workbook()
+ws = wb.active
+ws.title = "Equalized Gradient"
+
+# Write header
+for col_idx, col_name in enumerate(df.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+# Write data
+for row_idx, row in enumerate(df.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+cmap = cm.get_cmap("RdYlGn")
+norm = colors.Normalize(vmin=50, vmax=100)
+
+def val_to_hex(v):
+    rgba = cmap(norm(v))
+    return colors.rgb2hex(rgba, keep_alpha=False)[1:].upper()
+
+for i, row in df.iterrows():
+    values = row.iloc[2:].astype(float)
+    equalizer = 1.0  # ±1%
+    used = np.zeros(len(values), dtype=bool)
+
+    for idx, val in enumerate(values):
+        if used[idx]:
+            continue
+
+        # Group values within ±1%
+        group = [j for j in range(len(values)) if abs(values[j] - val) <= equalizer]
+        for j in group:
+            used[j] = True
+
+        avg_val = values.iloc[group].mean()
+        color = val_to_hex(avg_val)
+
+        for j in group:
+            ws.cell(row=i + 2, column=j + 3).fill = PatternFill(
+                start_color=color, end_color=color, fill_type="solid"
+            )
+
+# Save file
+wb.save(output_file)
+
+output_file
