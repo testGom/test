@@ -1,0 +1,149 @@
+
+
+def load_all_chunks() -> List[Document]:
+
+    docs: List[Document] = []
+
+    with psycopg.connect(PGVECTOR_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, document, cmetadata
+                FROM {EMBEDDINGS_TABLE}
+                """
+            )
+            rows = cur.fetchall()
+
+    for row in rows:
+        _id, text, meta = row
+        if isinstance(meta, str):
+            meta = json.loads(meta)
+
+        
+        meta = meta or {}
+        if "chunk_id" not in meta:
+            meta["chunk_id"] = str(_id)
+
+        docs.append(Document(page_content=text, metadata=meta))
+
+    if not docs:
+        raise RuntimeError("No documents found in embeddings table.")
+
+    return docs
+
+
+def sort_docs_global(docs: List[Document]) -> List[Document]:
+    """
+    Sort docs in a deterministic global order:
+    (file_path/source, page, chunk_index, chunk_id)
+    so "before/after" works across pages.
+    """
+    def key(d: Document):
+        m = d.metadata or {}
+        file_key = (
+            m.get("file_path")
+            or m.get("source")
+            or m.get("file_name")
+            or ""
+        )
+        page = int(m.get("page", 0) or 0)
+        chunk_index = int(m.get("chunk_index", 0) or 0)
+        chunk_id = str(m.get("chunk_id", ""))
+        return (file_key, page, chunk_index, chunk_id)
+
+    return sorted(docs, key=key)
+
+
+def get_window(
+    docs: List[Document],
+    center_idx: int,
+    before: int = BEFORE,
+    after: int = AFTER,
+) -> List[Document]:
+    """
+    Get [before, after] documents around center_idx, across pages.
+    """
+    start = max(0, center_idx - before)
+    end = min(len(docs), center_idx + after + 1)
+    return docs[start:end]
+
+
+# --------------------------
+# LLM & QUESTION GENERATION
+# --------------------------
+
+def build_llm() -> ChatOllama:
+    return ChatOllama(
+        model=LLM_MODEL,
+        base_url=OLLAMA_BASE,
+        temperature=0.4,
+    )
+
+
+
+def generate_question_for_window(
+    llm: ChatOllama,
+    center_doc: Document,
+    window_docs: List[Document],
+) -> str:
+    neighbors_text_parts = []
+    for d in window_docs:
+        if d is center_doc:
+            continue
+        neighbors_text_parts.append(d.page_content)
+    neighbors_text = "\n\n---\n\n".join(neighbors_text_parts) or "(none)"
+
+    prompt = QUESTION_PROMPT_TEMPLATE.format(
+        central_chunk=center_doc.page_content,
+        neighbor_chunks=neighbors_text,
+    )
+
+    resp = llm.invoke(prompt)
+    # ChatOllama returns an AIMessage-like object with .content
+    return getattr(resp, "content", str(resp))
+
+
+# --------------------------
+# MAIN PIPELINE
+# --------------------------
+
+def main() -> None:
+ 
+    print("Loading chunks from Postgres...")
+    docs = load_all_chunks()
+    docs = sort_docs_global(docs)
+    print(f"Loaded {len(docs)} chunks.")
+
+
+    print("Creating LLM client...")
+    llm = build_llm()
+
+    results: List[Dict[str, Any]] = []
+
+    for i in range(N_QUESTIONS):
+        center_idx = random.randint(0, len(docs) - 1)
+        center_doc = docs[center_idx]
+        window_docs = get_window(docs, center_idx, BEFORE, AFTER)
+
+        question = generate_question_for_window(
+            llm=llm,
+            center_doc=center_doc,
+            window_docs=window_docs,
+        )
+
+        results.append(
+            {
+                "question": question.strip(),
+                "central_chunk_text": center_doc.page_content,
+                "central_chunk_metadata": center_doc.metadata,
+            }
+        )
+
+        print(f"[{i+1}/{N_QUESTIONS}] Generated question for chunk_id={center_doc.metadata.get('chunk_id')}")
+
+    print("\n=== JSON OUTPUT ===")
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
